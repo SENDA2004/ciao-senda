@@ -3470,5 +3470,271 @@ ROUTES.stats=()=>{
    {id:"a-log200",i:"✍️",t:"200 risposte",d:"Answer 200 exercises in the app.",xp:100,test:()=>S.log.length>=200}
   );
 })();
+/* =========================================================
+   SHARE — a link / image / text that shows saved progress
+   ========================================================= */
+function snapshot(){
+  const est=levelEstimate(), r=readiness(), L=levelOf(xp());
+  return {
+    v:1, n:"Senda", d:new Date().toISOString().slice(0,10),
+    lvl:L.name, li:L.i, xp:L.cur,
+    band:est.band.code, score:est.total,
+    ready:r.total, pil:r.P.map(p=>[p.k,p.pct]),
+    sk:est.parts.map(p=>[p.k,p.score,p.band]),
+    ach:Object.keys(S.ach).map(id=>[id,S.ach[id]]),
+    st:S.streak, ans:S.log.length,
+    acc:(function(){ const s=stats(); const o={}; Object.keys(s).forEach(k=>o[k]=s[k].pct); return o; })(),
+    sp:S.speech||{}, ex:S.exams.slice(-5),
+    cnt:{les:countDone("les-"),verb:countDone("verb-"),rest:countDone("r-"),iq:IQ.filter(q=>done("iq-"+q.n)).length,
+         dish:countDone("dish-"),para:PARAS.filter(p=>done("para-"+p.id)).length,days:Object.values(S.days).filter(Boolean).length,
+         check:CHECKLIST.filter((x,i)=>S.checklist["c"+i]).length}
+  };
+}
+function encSnap(o){
+  const j=JSON.stringify(o);
+  return btoa(unescape(encodeURIComponent(j))).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"");
+}
+function decSnap(s){
+  try{
+    s=String(s).replace(/-/g,"+").replace(/_/g,"/");
+    while(s.length%4) s+="=";
+    return JSON.parse(decodeURIComponent(escape(atob(s))));
+  }catch(e){ return null; }
+}
+function shareURL(){
+  const base=location.href.split("#")[0];
+  return base+"#/p/"+encSnap(snapshot());
+}
+function shareText(){
+  const s=snapshot();
+  return `Ciao Senda — il mio italiano 🇮🇹
+Livello: ${s.band} · ${s.lvl}
+Pronta per il colloquio: ${s.ready}%
+Obiettivi: ${s.ach.length}/${ACH.length} · ${s.xp} XP · 🔥 ${s.st} giorni
+Lezioni ${s.cnt.les} · verbi ${s.cnt.verb} · domande colloquio ${s.cnt.iq}/85 · monologhi ${s.cnt.para}/6
+Aggiornato: ${s.d}`;
+}
+
+/* ---------- the shared report page (read-only) ---------- */
+ROUTES.p=arg=>{
+  const s=decSnap(arg);
+  if(!s) { crumbs(["Shared report"]); return head("Share","Report not readable",
+    "This link is broken or incomplete. Ask for it again — it must be copied in full.")+
+    `<div class="card"><button class="btn primary" data-go="dashboard">Open the app</button></div>`; }
+  crumbs(["Shared report",s.n]);
+  const mine=JSON.stringify(snapshot().ach)===JSON.stringify(s.ach);
+  const badges=s.ach.map(a=>ACH.find(x=>x.id===a[0])).filter(Boolean);
+  AFTER=()=>{
+    const b=$("#loadsnap");
+    if(b) b.onclick=()=>{
+      if(!confirm("Load this progress onto this device? It replaces what is saved here now.")) return;
+      const d=s;
+      d.ach.forEach(a=>S.ach[a[0]]=a[1]);
+      S.streak=d.st||1; S.speech=Object.assign(S.speech||{},d.sp||{}); S.exams=(d.ex||[]).concat(S.exams);
+      SAVE(); go("dashboard");
+    };
+  };
+  return `<div class="page-head">
+     <div class="kick">Ciao Senda · progress report · ${esc(s.d)}</div>
+     <h1>${esc(s.n)} — italiano per il ristorante</h1>
+     <p class="sub">A saved snapshot of ${esc(s.n)}'s training: level, interview readiness and achievements. ${mine?"This is your own report.":""}</p>
+   </div>
+   <div class="card"><div class="spread">
+     <div style="display:flex;gap:20px;flex-wrap:wrap;align-items:center">
+       ${ring(s.score,140,"LIVELLO")}
+       ${ring(s.ready,140,"PRONTA")}
+     </div>
+     <div style="flex:1;min-width:210px">
+       <div style="font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--gold);font-weight:700">Livello CEFR</div>
+       <h2 style="font-size:38px;margin:2px 0">${esc(s.band)}</h2>
+       <p style="color:var(--muted);margin:0 0 10px">${esc(s.lvl)} · ${s.xp} XP · 🔥 ${s.st} giorni di fila</p>
+       <span class="pill p-gold">${s.ach.length}/${ACH.length} obiettivi</span>
+       <span class="pill p-olive">${s.ans} risposte date</span>
+     </div></div></div>
+
+   <div class="grid g2">
+     <div class="card"><h3>Per abilità</h3>
+       ${(s.sk||[]).map(k=>`<div style="margin-bottom:11px">
+         <div style="display:flex;justify-content:space-between;font-size:13px"><span>${esc(SKILL_LABEL[k[0]]||k[0])}</span><b>${k[2]}</b></div>
+         <div class="bar"><i style="width:${k[1]}%"></i></div></div>`).join("")}</div>
+     <div class="card"><h3>Pronta per il colloquio</h3>
+       ${(s.pil||[]).map(p=>`<div style="margin-bottom:11px">
+         <div style="display:flex;justify-content:space-between;font-size:13px"><span>${esc(p[0])}</span><b>${p[1]}%</b></div>
+         <div class="bar"><i style="width:${p[1]}%"></i></div></div>`).join("")}</div>
+   </div>
+
+   <div class="card"><h3>Programma completato</h3><table>
+     <tr><td>Lezioni</td><td class="it">${s.cnt.les} / ${A1.length+A2.length}</td>
+         <td>Verbi</td><td class="it">${s.cnt.verb} / ${VERBS.length}</td></tr>
+     <tr><td>Moduli di sala</td><td class="it">${s.cnt.rest} / ${REST.length}</td>
+         <td>Domande colloquio</td><td class="it">${s.cnt.iq} / 85</td></tr>
+     <tr><td>Piatti Equilibrio</td><td class="it">${s.cnt.dish} / 8</td>
+         <td>Monologhi</td><td class="it">${s.cnt.para} / 6</td></tr>
+     <tr><td>Giorni del programma</td><td class="it">${s.cnt.days} / 20</td>
+         <td>Checklist finale</td><td class="it">${s.cnt.check} / 20</td></tr>
+   </table></div>
+
+   ${badges.length?`<div class="card"><h3>Obiettivi raggiunti</h3><div class="grid g4">
+     ${badges.map(a=>`<div style="text-align:center;padding:12px 6px;border:1px solid var(--gold);border-radius:12px;background:var(--gold-soft)">
+       <div style="font-size:24px">${a.i}</div>
+       <div style="font-family:var(--serif);font-size:13px;font-weight:700;margin-top:4px">${esc(a.t)}</div></div>`).join("")}
+     </div></div>`:""}
+
+   ${(s.ex&&s.ex.length)?`<div class="card"><h3>Esami di livello</h3><table>
+     <tr><th>Data</th><th>Punteggio</th><th>Livello</th></tr>
+     ${s.ex.map(e=>`<tr><td>${esc(e.d)}</td><td class="it">${e.total}%</td><td class="it">${esc(e.band)}</td></tr>`).join("")}
+     </table></div>`:""}
+
+   <div class="card"><div class="row">
+     <button class="btn primary" data-go="dashboard">Open the app</button>
+     <button class="btn" id="loadsnap">Load this progress on this device</button>
+   </div>
+   <p style="font-size:12.5px;color:var(--muted);margin-top:10px">This report is stored inside the link itself — nothing is uploaded anywhere.</p></div>`;
+};
+
+/* ---------- share page ---------- */
+ROUTES.share=()=>{
+  crumbs(["Progress","Share"]);
+  const s=snapshot();
+  AFTER=()=>{
+    const url=shareURL();
+    const box=$("#sharebox"); if(!box) return;
+    $("#shurl",box).value=url;
+    $("#shtext",box).value=shareText();
+    const copy=(val,btn,label)=>{
+      const done=()=>{ const o=btn.textContent; btn.textContent="✓ Copied"; setTimeout(()=>btn.textContent=o,1600); };
+      if(navigator.clipboard&&navigator.clipboard.writeText) navigator.clipboard.writeText(val).then(done,()=>{});
+      else { const t=document.createElement("textarea"); t.value=val; document.body.appendChild(t); t.select();
+             try{document.execCommand("copy");done();}catch(e){} t.remove(); }
+    };
+    $("#cpurl",box).onclick=e=>copy(url,e.target);
+    $("#cptext",box).onclick=e=>copy(shareText(),e.target);
+    $("#dlimg",box).onclick=()=>drawCard(s,true);
+    const nav=$("#shnative",box);
+    if(nav){
+      if(navigator.share) nav.onclick=()=>navigator.share({title:"Ciao Senda — il mio italiano",text:shareText(),url:url}).catch(()=>{});
+      else nav.style.display="none";
+    }
+    drawCard(s,false);
+  };
+  return head("Progress","Condividi i tuoi progressi",
+   "Every time you open this page it rebuilds from your saved progress — so whatever you share always shows your latest level, not an old one.")+
+  `<div class="withpanel"><div id="sharebox">
+    <div class="card"><h3>Progress card (image)</h3>
+      <p style="color:var(--muted);font-size:13.5px">A picture you can send on WhatsApp or post. It is generated from your saved data right now.</p>
+      <div style="overflow:auto;text-align:center;background:var(--bg);border-radius:12px;padding:10px">
+        <canvas id="shcanvas" width="1080" height="1080" style="width:100%;max-width:420px;border-radius:12px;box-shadow:var(--shadow)"></canvas></div>
+      <div class="row" style="margin-top:12px"><button class="btn primary" id="dlimg">⤓ Download the image</button>
+        <button class="btn" id="shnative">↗ Share…</button></div></div>
+
+    <div class="card"><h3>Link</h3>
+      <p style="color:var(--muted);font-size:13.5px">Anyone opening this link sees a read-only report of your progress — level, readiness, badges, exams. Your whole progress travels inside the link; nothing is uploaded to any server.</p>
+      <input class="inp" id="shurl" style="width:100%" readonly>
+      <div class="row" style="margin-top:10px"><button class="btn" id="cpurl">Copy link</button>
+        <button class="btn ghost" data-go="p/${encSnap(s)}">Preview the report</button></div></div>
+
+    <div class="card"><h3>Text summary</h3>
+      <p style="color:var(--muted);font-size:13.5px">For a quick message.</p>
+      <textarea class="inp" id="shtext" rows="7" style="width:100%" readonly></textarea>
+      <div class="row" style="margin-top:10px"><button class="btn" id="cptext">Copy text</button></div></div>
+
+    <div class="card"><h3>Move progress to another device</h3>
+      <p style="color:var(--muted);font-size:13.5px">Open your share link on the other phone or computer, then press <b>Load this progress on this device</b>. Or use a full backup file (it also carries your exercise history).</p>
+      <button class="btn" data-go="backup">Backup / export file</button></div>
+  </div>
+  <div class="side">
+    <div class="card"><h4>What the link shows</h4>
+      <ul style="padding-left:16px;font-size:13px;color:var(--muted)">
+        <li>Level (${esc(s.band)}) and readiness (${s.ready}%)</li>
+        <li>${s.ach.length} achievements with dates</li>
+        <li>Lessons, verbs, interview answers completed</li>
+        <li>Level exam history</li></ul>
+      <p style="font-size:12.5px;color:var(--muted)">It does <b>not</b> show your recordings, your review list or your wrong answers.</p></div>
+    <div class="card"><h4>Keep it honest</h4>
+      <p style="font-size:13px;color:var(--muted)">The card shows what you actually completed. That is what makes it worth sharing.</p></div>
+  </div></div>`;
+};
+
+/* ---------- canvas progress card ---------- */
+function drawCard(s,download){
+  const c=document.getElementById("shcanvas");
+  if(!c||!c.getContext) return;
+  const x=c.getContext("2d"); if(!x) return;
+  const W=1080,H=1080;
+  const cream="#F7F1E6",ink="#23221F",gold="#B08D4F",olive="#6B7A4F",mut="#7B7469",line="#E4D9C2";
+  x.fillStyle=cream; x.fillRect(0,0,W,H);
+  x.strokeStyle=gold; x.lineWidth=3; x.strokeRect(28,28,W-56,H-56);
+
+  x.fillStyle=gold; x.font="600 22px Helvetica,Arial,sans-serif";
+  x.fillText("CIAO SENDA · ITALIANO A1 → A2".split("").join(" ").replace(/   /g,"  "),70,110);
+  x.fillStyle=ink; x.font="700 62px Georgia,serif";
+  x.fillText("Il mio italiano",70,190);
+  x.fillStyle=mut; x.font="26px Helvetica,Arial,sans-serif";
+  x.fillText("Restaurant & interview training · aggiornato "+s.d,70,232);
+
+  /* two rings */
+  const ringD=(cx,cy,rad,pct,label,val)=>{
+    x.lineWidth=22; x.strokeStyle=line;
+    x.beginPath(); x.arc(cx,cy,rad,0,Math.PI*2); x.stroke();
+    x.strokeStyle=gold; x.lineCap="round";
+    x.beginPath(); x.arc(cx,cy,rad,-Math.PI/2,-Math.PI/2+Math.PI*2*(pct/100)); x.stroke();
+    x.fillStyle=ink; x.textAlign="center"; x.font="700 58px Georgia,serif";
+    x.fillText(val,cx,cy+12);
+    x.fillStyle=mut; x.font="600 20px Helvetica,Arial,sans-serif";
+    x.fillText(label,cx,cy+48); x.textAlign="left";
+  };
+  ringD(280,420,118,s.score,"LIVELLO",s.band);
+  ringD(620,420,118,s.ready,"PRONTA",s.ready+"%");
+
+  /* right stats */
+  x.fillStyle=ink; x.font="700 34px Georgia,serif";
+  x.fillText(s.lvl,790,360);
+  x.fillStyle=mut; x.font="24px Helvetica,Arial,sans-serif";
+  x.fillText(s.xp+" XP",790,400);
+  x.fillText("🔥 "+s.st+" giorni",790,438);
+  x.fillText(s.ach.length+"/"+ACH.length+" obiettivi",790,476);
+
+  /* bars */
+  const bars=[["Lezioni",s.cnt.les,A1.length+A2.length],["Verbi",s.cnt.verb,VERBS.length],
+    ["Sala",s.cnt.rest,REST.length],["Colloquio",s.cnt.iq,85],["Monologhi",s.cnt.para,6],["Programma",s.cnt.days,20]];
+  let y=610;
+  bars.forEach(b=>{
+    const pct=Math.min(1,b[1]/b[2]);
+    x.fillStyle=ink; x.font="600 26px Helvetica,Arial,sans-serif";
+    x.fillText(b[0],70,y);
+    x.fillStyle=mut; x.textAlign="right"; x.fillText(b[1]+" / "+b[2],1010,y); x.textAlign="left";
+    x.fillStyle=line; x.fillRect(70,y+12,940,14);
+    const g=x.createLinearGradient(70,0,1010,0); g.addColorStop(0,olive); g.addColorStop(1,gold);
+    x.fillStyle=g; x.fillRect(70,y+12,940*pct,14);
+    y+=72;
+  });
+
+  /* footer */
+  x.fillStyle=gold; x.fillRect(70,H-190,940,2);
+  x.fillStyle=ink; x.font="italic 30px Georgia,serif"; x.textAlign="center";
+  x.fillText("Non devi parlare italiano perfettamente.",W/2,H-135);
+  x.fillText("Devi parlare, ascoltare, chiedere e imparare.",W/2,H-95);
+  x.fillStyle=mut; x.font="600 20px Helvetica,Arial,sans-serif";
+  x.fillText("🇮🇹  BENVENUTA. COMINCIAMO.",W/2,H-50);
+  x.textAlign="left";
+
+  if(download){
+    try{
+      const a=document.createElement("a");
+      a.href=c.toDataURL("image/png");
+      a.download="ciao-senda-progress-"+s.d+".png";
+      a.click();
+    }catch(e){}
+  }
+}
+
+/* ---------- nav + achievement ---------- */
+(function(){
+  const prog=NAV.find(s=>s.g==="Progress");
+  if(prog) prog.items=prog.items.concat([["share","Share my progress"]]);
+  ACH.push({id:"a-share",i:"📤",t:"Condiviso",d:"Generate your first progress card.",xp:30,test:()=>done("shared-once")});
+  const _share=ROUTES.share;
+  ROUTES.share=function(){ mark("shared-once"); return _share(); };
+})();
 </script>
 </body></html>
